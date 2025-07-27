@@ -1,6 +1,6 @@
 ### 栈溢出
 
-#### test ret2textWithParams
+#### test ret2textWithParams x86
 
 * 这里在栈上注入字符串失败，因为在后续栈的使用中被覆盖，改用内存中搜索到的字符串
 
@@ -87,7 +87,7 @@ io.interactive()
 
 ```
 
-#### pwn.college PIE ret2text
+#### pwn.college PIE ret2text x64
 
 * 开启了PIE，需要ret到win()
 
