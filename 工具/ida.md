@@ -5,6 +5,60 @@
 * ai
   * [WPeace-HcH/WPeChatGPT: A plugin for IDA that can help to analyze binary file, it can be based on commonly used AI big models such as OpenAI and DeepSeek.](https://github.com/WPeace-HcH/WPeChatGPT)
 
+* 导出代码
+
+```python
+import idaapi
+import idautils
+import idc
+import ida_hexrays
+import os
+
+def export_all_decompiled_functions(output_dir="/tmp"):
+    if not ida_hexrays.init_hexrays_plugin():
+        idaapi.msg("Hex-Rays decompiler is not available.\n")
+        return
+
+    if not os.path.exists(output_dir):
+        try:
+            os.makedirs(output_dir)
+        except OSError as e:
+            idaapi.msg(f"Failed to create directory {output_dir}: {e}\n")
+            return
+
+    idaapi.msg(f"Exporting decompiled functions to {output_dir}\n")
+
+    for func_ea in idautils.Functions():
+        func_name = idc.get_func_name(func_ea)
+        if not func_name:
+            continue
+
+        try:
+            cfunc = ida_hexrays.decompile(func_ea)
+            decompiled_code = str(cfunc)
+        except ida_hexrays.DecompilationFailure:
+            idaapi.msg(f"Failed to decompile function {func_name}\n")
+            continue
+
+        sanitized_name = "".join(
+            c if c.isalnum() or c in "_-." else "_" for c in func_name
+        )
+        output_file = os.path.join(output_dir, f"{sanitized_name}.c")
+
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(decompiled_code)
+            idaapi.msg(f"Decompiled {func_name} to {output_file}\n")
+        except IOError as e:
+            idaapi.msg(f"Failed to write file {output_file}: {e}\n")
+
+if __name__ == "__main__":
+    # 运行脚本时自动调用
+    export_all_decompiled_functions(output_dir="D:/tmp/IPPBX-1.0.27.42.c")
+```
+
+
+
 ### 代码修复
 
 #### 还原结构体
