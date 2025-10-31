@@ -52,6 +52,15 @@ iptables -t nat -A OUTPUT -p tcp -d 192.168.108.21 --dport 10080 \
 iptables -P FORWARD ACCEPT   # 生产环境建议只 ACCEPT 需要的，测试时先放开
 ```
 
+#### 进程监控
+
+```shell
+# 需要使用tee
+while true; do ts=$(date '+%Y-%m-%d %H:%M:%S');ps www | sed "s/^/$ts | /" | grep -E 'ldalda|ldalda`|ldalda\$|ldalda&|ldalda\|(sh -c)' | grep -Ev '(grep -E)|gs_keepalived_fifo|(sed s/\^/)' | tee -a /tmp/pid.txt; done
+
+while true; do ts=$(date '+%Y-%m-%d %H:%M:%S');ps www | sed "s/^/$ts | /" | grep -E 'ldalda|ldalda`|ldalda\$|ldalda&|ldalda\|(sh -c)' | grep -Ev '(grep -E)|gs_keepalived_fifo|(sed s/\^/)' | (cat && cat > /tmp/pid.log); done
+```
+
 
 
 
