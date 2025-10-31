@@ -58,7 +58,8 @@ iptables -P FORWARD ACCEPT   # 生产环境建议只 ACCEPT 需要的，测试�
 # 需要使用tee
 while true; do ts=$(date '+%Y-%m-%d %H:%M:%S');ps www | sed "s/^/$ts | /" | grep -E 'ldalda|ldalda`|ldalda\$|ldalda&|ldalda\|(sh -c)' | grep -Ev '(grep -E)|gs_keepalived_fifo|(sed s/\^/)' | tee -a /tmp/pid.txt; done
 
-while true; do ts=$(date '+%Y-%m-%d %H:%M:%S');ps www | sed "s/^/$ts | /" | grep -E 'ldalda|ldalda`|ldalda\$|ldalda&|ldalda\|(sh -c)' | grep -Ev '(grep -E)|gs_keepalived_fifo|(sed s/\^/)' | (cat && cat > /tmp/pid.log); done
+ while true; do ts=$(date '+%Y-%m-%d %H:%M:%S');ps www | sed "s/^/$ts | /" | grep -E 'ldalda|ldalda`|ldalda\$|ldalda&|ldalda\|(sh -c)|/tmp/' | grep -Ev '(grep -E)|gs_keepalived_fi
+fo|(/tmp/pid.log)' | awk '{print; print >> "/tmp/pid.log"}'; done
 ```
 
 
