@@ -1,3 +1,215 @@
+### 基本指令
+
+#### 数学运算
+
+```shell
+# sh
+expr 2 \* 5 
+
+# bash
+echo $[5*5]
+
+# bash浮点数，scale=4必须显示设置
+var=$(echo 'scale=4;3.44/5'|bc)
+```
+
+#### if
+
+```shell
+# 根据if后的执行结果进入分支
+if command1; then 
+	command1s
+elif command2; then
+	command2s
+else
+	command3s
+fi
+
+# 根据表达式
+# []可以替换为test命令
+# 数值比较 字符串比较 文件比较，详情参见表达式数值比较
+# 不支持[ $a -ge 25+1 ]这样的复合表达式
+if [ exp1 ] && [ exp2 ] || [ exp3 ]; then
+	command1
+else
+	command2
+fi
+
+# 单括号，与之前的区别是会新起一个子shell，在子shell中执行
+if (command1); then 
+	command1s
+elif (command2); then
+	command2s
+else
+	command3s
+fi
+
+# 双括号
+# 支持符合表达式和更符合编程习惯的运算符
+if (( $a ** 2 >= 25 )); then
+	command1
+else
+	command2
+fi
+# 也可以用于运算赋值
+(( $b = $a * 3 ))
+
+# 双中括号，除了支持[]的全部功能，还支持*好匹配
+[[ $string == *.log ]]
+```
+
+#### 单中括号表达式
+
+**表达式数值比较**
+
+![image-20251113180138404](./images/image-20251113180138404.png)
+
+**表达式字符串比较**
+
+![image-20251113180244321](./images/image-20251113180244321.png)
+
+**表达式文件比较**
+
+![image-20251113180315537](./images/image-20251113180315537.png)
+
+#### 双括号表达式
+
+![image-20251113183207665](./images/image-20251113183207665.png)
+
+#### case
+
+```shell
+case $USER in
+aaa | bbb )
+	echo $USER
+	echo "bbb";;
+ccc)
+	echo $USER
+	echo "ccc";;
+*)
+	echo $USER
+esac
+```
+
+#### for
+
+```shell
+# $list默认的分隔符是$IFS包含空格、换行、制表符，可以通过更改$IFS的值来分割内容
+for $var in $list
+do
+	echo $var
+done
+
+for (( i=1; i <= 10; i++ ))
+do
+	echo "num $i"
+done
+```
+
+#### while
+
+```shell
+# 这里的test command和if一样
+
+while test command
+do
+	commands
+done
+```
+
+#### until
+
+```shell
+# 这里的test command和if一样
+
+until test command
+do
+	commands
+done
+```
+
+#### 参数
+
+```shell
+# 传递给参数或者函数的参数个数，不包括参数本身
+$#
+
+# 所有参数，单词列表，可用于for
+$@
+
+# 所有参数，作为单个字符串
+$*
+
+# 当前 shell 的进程 ID
+$$
+
+# 上一个命令的退出状态码
+$?
+```
+
+#### 获取输入
+
+```shell
+read -p "input:" input
+```
+
+#### sed
+
+```shell
+# 替换模式
+echo "This is a test" | sed 's/test/big test/'
+# This is a big test
+
+cat data1.txt
+# The quick brown fox jumps over the lazy dog.
+# The quick brown fox jumps over the lazy dog.
+# The quick brown fox jumps over the lazy dog.
+# The quick brown fox jumps over the lazy dog.
+
+sed 's/dog/cat/' data1.txt
+# The quick brown fox jumps over the lazy cat.
+# The quick brown fox jumps over the lazy cat.
+# The quick brown fox jumps over the lazy cat.
+# The quick brown fox jumps over the lazy cat.
+
+# -e执行多个操作，使用分号分隔
+$ sed -e 's/brown/red/; s/dog/cat/' data1.txt
+The quick red fox jumps over the lazy cat.
+The quick red fox jumps over the lazy cat.
+The quick red fox jumps over the lazy cat.
+The quick red fox jumps over the lazy cat.
+
+# 这样无需分号
+$ sed -e '
+> s/brown/green/
+> s/fox/toad/
+> s/dog/cat/' data1.txt
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+$
+
+# 在文件中存放规则
+$ cat script1.sed
+s/brown/green/
+s/fox/toad/
+s/dog/cat/
+$
+$ sed -f script1.sed data1.txt
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+The quick green toad jumps over the lazy cat.
+$
+```
+
+![image-20251114135348549](./images/image-20251114135348549.png)
+
+#### gawk/awk
+
+![image-20251114140518939](./images/image-20251114140518939.png)
+
 ### 常用命令
 
 ```shell
@@ -7,11 +219,31 @@ grep -rl "" /
 find . -name "*.txt" -exec cat {} \;
 # 所有文件作为参数一次传入
 find . -name "*.txt" -exec cat {} +
+
+# 打包，解包
+tar -czvf archive.tar file1 file2 dir
+tar -xzvf archive.tar file1 file2 dir
+
+# 查看挂载信息
+mount | grep /data
+
+# 监控tcp连接
+ss -tuna
+netstat -antp
+watch -n 1 netstat -antp
 ```
 
 
 
 ### 常用脚本
+
+#### ubuntu 注释清华源
+
+```shell
+sudo sed -i 's|https\?://mirrors\.tuna\.tsinghua\.edu\.cn|# &|g' /usr/share/python-apt/templates/Ubuntu.mirrors
+```
+
+
 
 #### iptables端口转发
 
