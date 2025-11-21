@@ -208,6 +208,16 @@ $
 
 #### gawk/awk
 
+```shell
+# '{print $1}'是gawk脚本，脚本必须在'{}'内
+# print是gawk命令
+# $0代表整个文本行，$n表示文本行的第n个字段，gawk命令将会处理文本的每一行
+# -F可以指定字段的分隔符
+gawk -F: '{print $1}' /etc/passwd
+```
+
+
+
 ![image-20251114140518939](./images/image-20251114140518939.png)
 
 ### 常用命令
