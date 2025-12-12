@@ -1,6 +1,6 @@
 ### 插件
 
-* 漏洞挖掘
+* 漏洞挖掘 VulFI
   * [Accenture/VulFi: IDA Pro plugin for query based searching within the binary useful mainly for vulnerability research.](https://github.com/Accenture/VulFi)
 * ai
   * [WPeace-HcH/WPeChatGPT: A plugin for IDA that can help to analyze binary file, it can be based on commonly used AI big models such as OpenAI and DeepSeek.](https://github.com/WPeace-HcH/WPeChatGPT)
@@ -83,3 +83,33 @@ if __name__ == "__main__":
 * 找到需要还原结构体的代码，`Set item type`设置为对应类型
 
 ![image-20250807171423220](./images/image-20250807171423220.png)
+
+### IDA远程调试设备程序
+
+1. 将调试服务端上传到设备，这里的服务端可以是IDA dbgsrv目录下的相应程序（动态链接，一般不适用我们的设备），或者直接上传一个gdbserver（[hugsy/gdb-static: Public repository of statically compiled GDB and GDBServer](https://github.com/hugsy/gdb-static) 这里有编译好的静态链接gdbserver）
+2. 以gdbserver为例，运行并监听在某个端口
+
+![image-20251209111438705](./images/image-20251209111438705.png)
+
+3. 设置ida
+
+用gdbserver选择Remote GDB debugger，用ida的程序选Remote Linux debugger
+
+```txt
+Debugger -> Select debugger -> Remote GDB/Linux debugger
+Debugger -> Process options -> 运行程序和hostname:port
+```
+
+这里要配置程序在设备上的路径和参数，还有设备的ip和监听端口
+
+![image-20251209111641369](./images/image-20251209111641369.png)
+
+4. 可以在调试前先打断点，运行到断点后f5，即可调试反汇编代码
+
+![image-20251209112747376](./images/image-20251209112747376.png)
+
+5. 进入新窗口开始调试
+
+![image-20251209111900042](./images/image-20251209111900042.png)
+
+![image-20251209111924244](./images/image-20251209111924244.png)
