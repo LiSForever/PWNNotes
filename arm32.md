@@ -2,6 +2,28 @@
 
 ### 工具
 
+### 概念
+
+#### Thumb 指令
+
+ARM 处理器有两种主要运行模式：
+
+- **ARM 模式**：指令长度固定为 32 位（4 字节）。
+- **Thumb 模式**：指令长度通常为 16 位（2 字节），效率更高，内存占用更小。
+
+Thumb指令更短，一般来说可用的Gadget更多，通过如下命令搜索Thumb指令
+
+```shell
+ROPgadget --binary libc-2.21.so --thumb
+```
+
+ARM 处理器的程序状态寄存器（CPSR）中有一个 **T 位（Thumb bit）**。
+
+- 如果 T=0，CPU 认为下一条指令是 32 位的 ARM 指令。
+- 如果 T=1，CPU 认为下一条指令是 16 位的 Thumb 指令
+
+`BLX r5` r5的值是`0x00003738 + 1`，这里的+1就表示T=1
+
 ### 汇编
 
 #### 寄存器
@@ -49,12 +71,42 @@
 
 参数按 **word 对齐**（4 字节对齐）
 
-### 1. 返回值放在 `R0` 中（基本类型）
+1. 返回值放在 `R0` 中（基本类型）
 
 - `int`, `char`, `pointer` 等类型直接用 `R0`
 - `long long`、`double` 用 `R0:R1` 组成 64 位
 
-### 2. 返回结构体（大小 ≤ 4 个字）的方式：
+2. 返回结构体（大小 ≤ 4 个字）的方式：
 
 - 如果结构体大小 ≤ 4 字节，可以直接用 `R0` 返回
 - 如果结构体大小 > 4 字节，则**调用者提供缓冲区地址**，传递给 callee 的第一个参数，callee 写入该结构体
+
+#### 跳转指令
+
+```assembly
+# PC = target,LR = 下一条指令地址，不支持ARM / Thumb切换；类似于call
+BL sub_1234
+
+# PC = target,LR = 下一条指令地址，支持ARM / Thumb切换
+# BLX支持 BLX 立即数; 和BLX 寄存器; 两种形式
+BLX target
+
+# 只跳转 不保存返回地址 不切换状态
+B Rm
+
+# 跳转到 Rm；根据 bit0 切换 ARM/Thumb；不保存 LR
+BX Rm
+
+# 从栈中加载 PC；根据 PC bit0 切换 ARM/Thumb
+POP {R0, R1, PC}
+
+# 和 pop {..., pc} 本质相同；ARM 状态常见
+LDMIA SP!, {R4, R5, PC}
+
+# 不会切换状态
+MOV PC, R3
+
+# 从内存加载 PC；根据 bit0 切换状态
+LDR PC, [SP, #0x10]
+```
+
