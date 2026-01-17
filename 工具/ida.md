@@ -84,6 +84,16 @@ if __name__ == "__main__":
 
 ![image-20250807171423220](./images/image-20250807171423220.png)
 
+#### 栈的查看
+
+点击变量，即可进入IDA模拟的函数栈空间
+
+![image-20260117183558311](./images/image-20260117183558311.png)
+
+![image-20260117183648130](./images/image-20260117183648130.png)
+
+![image-20260117183659550](./images/image-20260117183659550.png)
+
 ### IDA远程调试设备程序
 
 1. 将调试服务端上传到设备，这里的服务端可以是IDA dbgsrv目录下的相应程序（动态链接，一般不适用我们的设备），或者直接上传一个gdbserver（[hugsy/gdb-static: Public repository of statically compiled GDB and GDBServer](https://github.com/hugsy/gdb-static) 这里有编译好的静态链接gdbserver）
