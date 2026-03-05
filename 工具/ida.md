@@ -7,6 +7,8 @@
 
 * 导出代码
 
+[应用安全 --- IDA脚本 之 导出代码 - GKLBB - 博客园](https://www.cnblogs.com/GKLBB/p/19106488)
+
 ```python
 import idaapi
 import idautils
