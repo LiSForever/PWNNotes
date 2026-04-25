@@ -386,6 +386,7 @@ readelf -d ./target | grep VERSYM
 
 * .gnu.version[ symidx ]如果访问非法内存，会造成无法利用；如果.gnu.version[ symidx ]访问的数据不为0，后续版本检查会影响ret2dl_resolve的利用
 * 可以通过调整Elf32_Sym的位置，即symidx 的值，来调整.gnu.version[ symidx ]的访问结果
+* 一般来说，需要使得.gnu.version[ symidx ]为0或者伪造link_map+232的值为0，绕过版本检查
 
 ##### 不知道libc基址的情况下伪造link_map的可行性
 
