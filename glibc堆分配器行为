@@ -1,0 +1,365 @@
+# glibc 堆分配器速查
+
+本文默认讨论 **glibc `malloc.c` 的 ptmalloc**，并采用下面这个范围：
+
+- 架构：`x86-64`
+- 默认对齐：`16` 字节
+- `tcache` 已启用
+- 未手工修改 `mallopt` / tunable
+
+如果你在 32 位环境、关闭 `tcache`、或修改过 `M_MXFAST` / `mmap_threshold`，下面的“精确数字”会变化；但“路径”和“时机”基本不变。
+
+## 0. 先记住这几个数字
+
+### 0.1 内部大小 `nb`
+
+`malloc` 先把用户申请大小 `req` 转成内部 chunk 大小 `nb`：
+
+```c
+nb = request2size(req)
+```
+
+在默认 `x86-64` 下，可以粗记为：
+
+- `nb = 对齐(req + 8, 16)`
+- 最小 chunk 大小是 `0x20`（32）
+
+### 0.2 关键阈值
+
+| 项                                | 默认值                   | 对应到用户申请大小   |
+| --------------------------------- | ------------------------ | -------------------- |
+| `tcache` 最大缓存请求             | `1032`                   | `req <= 1032`        |
+| `fastbin` 默认最大 chunk          | `0x80`（128）            | `req <= 120`         |
+| `fastbin` 可调上限                | `0xa0`（160）            | `req <= 152`         |
+| `smallbin` 上界                   | `chunk < 0x400`（1024）  | `req <= 1000`        |
+| `largebin` 起点                   | `chunk >= 0x400`（1024） | `req >= 1001`        |
+| `FASTBIN_CONSOLIDATION_THRESHOLD` | `0x10000`（65536）       | 大约 `req >= 65513`  |
+| `mmap_threshold` 默认值           | `128 KiB`                | 大约 `req >= 131049` |
+
+注意两点：
+
+- `tcache` 是一层“线程缓存”，不是 arena 内部的 bin 分类，所以它和 `fastbin/smallbin/largebin` 是**覆盖关系**，不是互斥关系。
+- `1001..1032` 这个区间，按内部大小已经属于 large 路径，但如果 `tcache` 命中，仍会先从 `tcache` 返回。
+
+## 1. free chunk 进入 bin 时，是先进后出吗
+
+结论直接记：
+
+| 结构           | 释放时怎么放 | `malloc` 时怎么取  | 整体行为           |
+| -------------- | ------------ | ------------------ | ------------------ |
+| `tcache`       | 头插         | 头取               | `LIFO`             |
+| `fastbin`      | 头插         | 头取               | `LIFO`             |
+| `unsorted bin` | 头插         | 从尾开始扫         | 近似 `FIFO`        |
+| `smallbin`     | 头插         | 从尾取 `last(bin)` | 近似 `FIFO`        |
+| `largebin`     | 按大小插入   | 按大小找最小可用块 | 不是单纯 LIFO/FIFO |
+
+研究堆时最实用的记法是：
+
+- `tcache/fastbin`：后进先出
+- `unsorted/smallbin`：新块进头，但分配从尾拿，所以更像先进先出
+- `largebin`：看“大小有序”，不要硬套 LIFO/FIFO
+
+## 2. `malloc` 时，按大小类型逐一说明查找路径
+
+这一节只说“**先查哪里**”和“**从哪里开始扫**”。
+
+## 2.1 `req <= 1032`：先查 `tcache`
+
+路径：
+
+1. 先算出 `tc_idx`
+2. 直接看该大小类的 `tcache[idx]`
+3. 非空就从**链表头**取出，结束
+
+遍历方向：
+
+- 不遍历
+- 直接取头节点
+
+结论：
+
+> `tcache` 命中时，arena 里的 `fastbin/smallbin/largebin/unsorted` 全都不会碰。
+
+## 2.2 `req <= 120`：再查 `fastbin`
+
+这是默认 `x86-64` 下的 fastbin 范围。
+
+路径：
+
+1. `tcache` miss
+2. 如果 `nb <= get_max_fast()`，进入对应 `fastbin[idx]`
+3. 从该 fastbin 的**链表头**直接弹出
+
+遍历方向：
+
+- 不遍历
+- 直接从**头部**取
+
+结论：
+
+> `fastbin` 是“按精确大小类、头取头放”的单链表快速路径。
+
+## 2.3 `121 <= req <= 1000`：small request
+
+这是默认 `x86-64` 下的 smallbin 请求范围。
+
+路径按顺序是：
+
+1. 先查 `tcache`
+2. 再查 `fastbin`（这里只有一部分最小块会落进 fastbin）
+3. 再查对应 `smallbin`
+4. 再扫 `unsorted bin`
+5. 若还不够，再从“更大的 bins”找并 split
+6. 再不够就用 `top chunk`
+
+### 2.3.1 查 `smallbin` 时从哪里取
+
+`smallbin` 是**精确大小类**，因此不需要在 bin 内部按大小搜索。
+
+它直接做：
+
+- `victim = last(bin)`
+
+也就是：
+
+- 从**尾部**取
+- 不是从头
+- 不是从中间
+
+### 2.3.2 查 `unsorted bin` 时从哪里开始
+
+`malloc` 扫 `unsorted` 时是：
+
+- `victim = unsorted_chunks(av)->bk`
+
+也就是：
+
+- 从 **尾部** 开始扫
+
+而 free 到 `unsorted` 时是头插，因此整体效果更接近 FIFO。
+
+### 2.3.3 如果 smallbin 和 unsorted 都不满足
+
+这时会进入 regular bin 搜索：
+
+- 从“**下一个更大的 bin**”开始
+- 借助 `binmap` 跳过空 bin
+- 对命中的 bin，用 `last(bin)`，也就是从**尾部**取候选
+
+结论：
+
+> small request 的关键点是：先精确查 smallbin，smallbin 取尾；再扫 unsorted，unsorted 也从尾开始。
+
+## 2.4 `req >= 1001`：large request
+
+这是默认 `x86-64` 下的 large 路径起点。
+
+路径按顺序是：
+
+1. 先查 `tcache`
+2. 若 `have_fastchunks` 为真，先执行 `malloc_consolidate`
+3. 再扫 `unsorted bin`
+4. 再在当前对应 `largebin` 区间内按大小搜索
+5. 若当前 largebin 不够，再用 `binmap` 从“更大的非空 bin”继续找
+6. 仍无则用 `top chunk`
+7. 再不够则进入 `sysmalloc`，可能走 `sbrk/brk` 或 `mmap`
+
+### 2.4.1 largebin 内部从哪里开始找
+
+不是简单“从头”或“从尾”线性扫整个双向链表，而是：
+
+- 先进入当前 `largebin_index(nb)` 对应的 bin
+- 利用 `fd_nextsize/bk_nextsize` 这条**按大小排序的 nextsize 链**找“最小但够用”的块
+
+所以对 `largebin` 最准确的描述是：
+
+> 先按大小有序链找，不是简单头扫或尾扫。
+
+### 2.4.2 扫更大的 bins 时从哪里开始
+
+如果当前 largebin 区间没有合适块，则：
+
+- 从“**下一个更大的 bin**”开始
+- 用 `binmap` 跳过空 bin
+- 命中某个 bin 后，用 `last(bin)`，即从**尾部**取候选
+
+这里的设计目的就是 best-fit：
+
+- 先找最接近请求大小的 bin
+- 再在 bin 内尽量取最小的合适块
+
+结论：
+
+> large request 的核心不是“头/尾”，而是“先按大小有序链找 best-fit；跨 bin 时从下一个更大的 bin 开始”。
+
+## 2.5 `req` 大到接近 `mmap_threshold`
+
+默认 `mmap_threshold = 128 KiB`。
+
+在默认 `x86-64` 下，大约从：
+
+- `req >= 131049`
+
+开始，内部 `nb` 会达到或超过 `131072`，此时 `sysmalloc` 可能直接尝试 `mmap`。
+
+结论：
+
+> 超过 `mmap_threshold` 后，分配器可能直接走 `mmap`，这时普通 bins 路径的重要性就下降了。
+
+## 3. split 的时机
+
+只记这一条就够：
+
+> 找到的空闲 chunk 比请求大，而且剩余部分 `>= MINSIZE`，就 split。
+
+默认 `x86-64` 下：
+
+- `MINSIZE = 0x20`
+
+常见 split 来源：
+
+- 从 `unsorted bin` 取到更大的 chunk
+- 从 `largebin` / 更大 regular bin 取到更大的 chunk
+- 从 `top chunk` 切一块
+
+如果剩余部分 `< MINSIZE`：
+
+- 不 split
+- 整块直接给用户
+
+## 4. chunk 合并的时机
+
+只分成两类记：
+
+### 4.1 立即合并
+
+对 **不走 tcache / fastbin** 的普通 free chunk：
+
+- `free` 当下就检查前后相邻 chunk
+- 能合并就立刻合并
+- 合并后通常先进 `unsorted bin`
+- 若紧邻 `top chunk`，则可能直接并入 `top`
+
+### 4.2 延迟合并
+
+这两类在 `free` 当下通常不合并：
+
+- `tcache`
+- `fastbin`
+
+结论：
+
+> 普通 free 立即合并；`tcache/fastbin` 延迟合并。
+
+## 5. fastbin 的整理合并时机，以及 `malloc_consolidate`
+
+这是你点名要补清楚的部分。
+
+## 5.1 `malloc_consolidate` 是什么
+
+它可以直接理解成：
+
+> 一个“专门清空 fastbin 并做相邻合并”的内部函数。
+
+它做的事是：
+
+1. 把 arena 里所有 fastbin 链表摘空
+2. 逐个取出 fastbin chunk
+3. 检查前后相邻 chunk，能合并就合并
+4. 合并后的结果不直接进 smallbin/largebin，而是**先进 `unsorted bin`**
+
+因此：
+
+- `malloc_consolidate` 不是“直接分类”
+- 它做的是“**清 fastbin + 合并 + 扔到 unsorted**”
+
+## 5.2 `malloc` 触发 `malloc_consolidate`：到底多大
+
+在 `_int_malloc` 中，**large request** 路径会先看：
+
+- `if (!in_smallbin_range(nb) && have_fastchunks) malloc_consolidate(av);`
+
+默认 `x86-64` 下：
+
+- `in_smallbin_range(nb)` 的边界是 `nb < 1024`
+- 所以当 `nb >= 1024` 时，会走这条逻辑
+- 换成用户申请大小，大约是：
+  - `req >= 1001`
+
+结论：
+
+> 在默认 `x86-64` 下，只要 `malloc` 申请进入 large 路径，也就是大约 `req >= 1001`，并且 arena 里还有 fastbin 残留，就会先触发 `malloc_consolidate`。
+
+## 5.3 `free` 触发 `malloc_consolidate`：到底多大
+
+在 free 路径中有一个固定阈值：
+
+- `FASTBIN_CONSOLIDATION_THRESHOLD = 65536`
+
+注意这里比较的是：
+
+- **chunk 内部大小 `size`**
+- 不是用户传给 `malloc` 的原始 `req`
+
+默认 `x86-64` 下，换成用户申请大小大约是：
+
+- `req >= 65513`
+
+为了便于记忆，可以粗记为：
+
+> `free` 一个 **约 64 KiB 以上的普通 chunk** 时，如果 arena 里还有 fastbin 残留，就会触发 `malloc_consolidate`。
+
+## 5.4 一句话总结第 5 点
+
+- `malloc` 侧触发：**large request**，默认约 `req >= 1001`
+- `free` 侧触发：**大 free chunk**，默认约 `req >= 65513`
+- 真正做的事：**清空 fastbin，合并相邻空闲块，结果丢进 unsorted**
+
+## 6. unsorted bin 的整理时机
+
+`unsorted bin` 的整理不是在 `free` 当下完成，而是在后续 `malloc` 扫描它时完成。
+
+路径是：
+
+1. `malloc` 从 `unsorted` 的**尾部**开始扫
+2. 如果遇到 exact fit：
+   - 直接拿走
+3. 如果块更大：
+   - 可能 split
+   - 取前半块返回
+   - remainder 重新挂回 `unsorted`
+4. 如果不适合本次请求：
+   - 从 `unsorted` 摘下
+   - 挂到对应的 `smallbin` 或 `largebin`
+
+因此：
+
+> `unsorted bin` 是“先缓存、后分类”的中转站；整理时机就是后续 `malloc` 扫描它的时候。
+
+## 7. 最短速记版
+
+如果你只想留一页速查，记下面这几句：
+
+1. `tcache`、`fastbin` 都是头插头取，`LIFO`
+2. `unsorted`、`smallbin` 都是头插尾取，近似 `FIFO`
+3. `smallbin` 取 `last(bin)`，也就是从尾取；`unsorted` 也是从尾开始扫
+4. `largebin` 不是简单头/尾扫，而是先按 `nextsize` 有序链找 best-fit
+5. 默认 `x86-64` 下：`fastbin req <= 120`，`small req <= 1000`，`large req >= 1001`
+6. `split` 条件：剩余部分 `>= MINSIZE`
+7. 普通 free 立即合并；`tcache/fastbin` 延迟合并
+8. `malloc_consolidate = 清 fastbin + 合并 + 扔进 unsorted`
+9. `malloc` 申请 large 块时会先 `malloc_consolidate`
+10. `free` 一个约 `64 KiB` 以上的普通 chunk 时，也会触发 `malloc_consolidate`
+
+## 8. 参考
+
+以下结论主要依据 `glibc malloc.c` 源码中的默认宏和路径：
+
+- `TCACHE_MAX_BINS = 64`，`TCACHE_FILL_COUNT = 7`
+- `MAX_FAST_SIZE`
+- `MIN_LARGE_SIZE`
+- `FASTBIN_CONSOLIDATION_THRESHOLD = 65536`
+- `DEFAULT_MMAP_THRESHOLD = 128 * 1024`
+- `_int_malloc`
+- `_int_free_maybe_consolidate`
+- `malloc_consolidate`
