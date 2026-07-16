@@ -455,6 +455,25 @@ io.interactive()
 
 ```
 
+####  PlaidCTF-2015-plaiddb
+
+* [write-ups-2015/plaidctf-2015/pwnable/plaiddb at master · ctfs/write-ups-2015](https://github.com/ctfs/write-ups-2015/tree/master/plaidctf-2015/pwnable/plaiddb)
+
+```txt
+PUT: malloc(0x38) malloc(len(key)) malloc(len(data))
+PUT写入key时有零字节的溢出，PUT申请的malloc(0x38)是高价值目标，其中包含data指针，可以读取该指针的内容，还有链表指针，DEL时有类似unlink的操作
+struct pair {
+    char *key;          // +0x00
+    long size;          // +0x08
+    char *data;         // +0x10
+    struct pair *prev;  // +0x18
+    struct pair *next;  // +0x20
+    void *ptr1;         // +0x28
+    void *ptr2;         // +0x30
+};
+```
+
+
 
 
  
